@@ -1,12 +1,9 @@
 #pragma once
 
-namespace monic
-{
+namespace monic {
 
 typedef struct {
-    bool connect;
+  bool connect;
 } state_t;
-    
+
 } // namespace monic
-
-

@@ -6,10 +6,10 @@
 #include <mutex>
 #include <thread>
 
+#include "log.h"
 #include "main.hpp"
-
-#define MONIC_WAN_INTERFACE "wwan0"
-#define MONIC_WAN_PORT "/dev/cdc-wdm0"
+#include "netlink.h"
+#include "tcp.h"
 
 std::mutex mtx;
 std::atomic<bool> g_shutdown_requested(false);
@@ -28,6 +28,10 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
 
     {
       // TODO: check the internet connection here
+      int err = monic_tcp_host(const_cast<char *>("localhost"), 8080);
+      std::cout << "host result: " << err << std::endl;
+      err = monic_tcp_host(const_cast<char *>("127.0.0.1"), 8080);
+      std::cout << "ip result: " << err << std::endl;
       std::lock_guard<std::mutex> lock(*mtx_ptr);
       (*state_ptr).connect = true;
     }
@@ -41,7 +45,7 @@ int main() {
   std::signal(SIGINT, monic_signal_handler);
   std::signal(SIGKILL, monic_signal_handler);
 
-  std::cout << "program started" << std::endl;
+  log_info("program started\n");
 
   std::shared_ptr<monic::state_t> shared_state_ptr =
       std::make_shared<monic::state_t>();
@@ -49,9 +53,12 @@ int main() {
   std::thread task1(monic_connectivity_check_task, shared_state_ptr,
                     &g_shutdown_requested, &mtx);
 
-  task1.join();
+  std::thread task2(monic_netlink_task, &g_shutdown_requested);
 
-  std::cout << "program stopped" << std::endl;
+  task1.join();
+  task2.join();
+
+  log_info("program stopped\n");
 
   return 0;
 }

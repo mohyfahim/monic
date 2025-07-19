@@ -1,16 +1,11 @@
-// C program to Implement Ping
-
-// Compile as: gcc -o ping ping.c
-// Run as: sudo ./ping <hostname>
-
 #include <arpa/inet.h>
-#include <atomic>
+#include <errno.h>
 #include <fcntl.h>
-#include <iostream>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/ip_icmp.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -18,32 +13,8 @@
 #include <time.h>
 #include <unistd.h>
 
-// Define the Packet Constants
-#define PING_PKT_S 64           // ping packet size
-#define PORT_NO 0               // automatic port number
-#define PING_SLEEP_RATE 1000000 // ping sleep rate (in microseconds)
-#define RECV_TIMEOUT 1          // timeout for receiving packets (in seconds)
-
-namespace monic {
-
-// Ping packet structure
-typedef struct {
-  struct icmphdr hdr;
-  char msg[PING_PKT_S - sizeof(struct icmphdr)];
-} ping_t;
-
-} // namespace monic
-
-// Define the Ping Loop
-int pingloop = 1;
-
-// Function Declarations
-unsigned short checksum(void *b, int len);
-void intHandler(int dummy);
-char *dns_lookup(char *addr_host, struct sockaddr_in *addr_con);
-char *reverse_dns_lookup(char *ip_addr);
-void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
-               char *ping_ip, char *rev_host);
+#include "dns.h"
+#include "ping.h"
 
 // Calculate the checksum (RFC 1071)
 unsigned short checksum(void *b, int len) {
@@ -61,58 +32,13 @@ unsigned short checksum(void *b, int len) {
   return result;
 }
 
-// Interrupt handler
-void intHandler(int dummy) { pingloop = 0; }
-
-// Perform a DNS lookup
-char *dns_lookup(char *addr_host, struct sockaddr_in *addr_con) {
-  printf("\nResolving DNS...\n");
-  struct hostent *host_entity;
-  char *ip = (char *)malloc(NI_MAXHOST * sizeof(char));
-
-  if ((host_entity = gethostbyname(addr_host)) == NULL) {
-    // No IP found for hostname
-    return NULL;
-  }
-
-  // Fill up address structure
-  strcpy(ip, inet_ntoa(*(struct in_addr *)host_entity->h_addr));
-  (*addr_con).sin_family = host_entity->h_addrtype;
-  (*addr_con).sin_port = htons(PORT_NO);
-  (*addr_con).sin_addr.s_addr = *(long *)host_entity->h_addr;
-
-  return ip;
-}
-
-// Resolve the reverse lookup of the hostname
-char *reverse_dns_lookup(char *ip_addr) {
-  struct sockaddr_in temp_addr;
-  socklen_t len;
-  char buf[NI_MAXHOST], *ret_buf;
-
-  temp_addr.sin_family = AF_INET;
-  temp_addr.sin_addr.s_addr = inet_addr(ip_addr);
-  len = sizeof(struct sockaddr_in);
-
-  if (getnameinfo((struct sockaddr *)&temp_addr, len, buf, sizeof(buf), NULL, 0,
-                  NI_NAMEREQD)) {
-    printf("Could not resolve reverse lookup of hostname\n");
-    return NULL;
-  }
-
-  ret_buf = (char *)malloc((strlen(buf) + 1) * sizeof(char));
-  strcpy(ret_buf, buf);
-  return ret_buf;
-}
-
 // Make a ping request
 void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
-               std::atomic<bool> *shutdown_requested_ptr, char *ping_ip,
-               char *rev_host) {
+               char *ping_ip, char *rev_host) {
   int ttl_val = 64, msg_count = 0, i, addr_len, flag = 1,
       msg_received_count = 0;
   char rbuffer[128];
-  monic::ping_t pckt;
+  ping_t pckt;
   struct sockaddr_in r_addr;
   struct timespec time_start, time_end, tfs, tfe;
   long double rtt_msec = 0, total_msec = 0;
@@ -134,8 +60,9 @@ void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
   setsockopt(ping_sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv_out,
              sizeof tv_out);
 
-  // Send ICMP packet in an infinite loop
-  while (!(*shutdown_requested_ptr).load()) {
+  clock_gettime(CLOCK_MONOTONIC, &tfe);
+
+  while (tfe.tv_sec - tfs.tv_sec < 3) {
     // Flag to check if packet was sent or not
     flag = 1;
 
@@ -161,6 +88,8 @@ void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
       flag = 0;
     }
 
+    memset(rbuffer, 0, sizeof rbuffer);
+
     // Receive packet
     addr_len = sizeof(r_addr);
     if (recvfrom(ping_sockfd, rbuffer, sizeof(rbuffer), 0,
@@ -177,9 +106,10 @@ void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
       // If packet was not sent, don't receive
       if (flag) {
         struct icmphdr *recv_hdr = (struct icmphdr *)rbuffer;
-        if (!(recv_hdr->type == 0 && recv_hdr->code == 0)) {
-          printf("Error... Packet received with ICMP type %d code %d\n",
-                 recv_hdr->type, recv_hdr->code);
+        if (!(recv_hdr->type == 69 && recv_hdr->code == 0)) {
+          printf(
+              "Error... Packet received with ICMP type %d code %d errorno %s\n",
+              recv_hdr->type, recv_hdr->code, strerror(errno));
         } else {
           printf("%d bytes from %s (h: %s) (ip: %s) msg_seq = %d ttl = %d rtt "
                  "= %Lf ms.\n",
@@ -189,8 +119,8 @@ void send_ping(int ping_sockfd, struct sockaddr_in *ping_addr, char *ping_dom,
         }
       }
     }
+    clock_gettime(CLOCK_MONOTONIC, &tfe);
   }
-  clock_gettime(CLOCK_MONOTONIC, &tfe);
   double timeElapsed = ((double)(tfe.tv_nsec - tfs.tv_nsec)) / 1000000.0;
   total_msec = (tfe.tv_sec - tfs.tv_sec) * 1000.0 + timeElapsed;
 
@@ -212,22 +142,23 @@ int monic_ping_host(char *host) {
 
   ip_addr = dns_lookup(host, &addr_con);
   if (ip_addr == NULL) {
-    std::cout << "\nDNS lookup failed! Could not resolve hostname!\n";
+    printf("\nDNS lookup failed! Could not resolve hostname!\n");
     return 0;
   }
 
   reverse_hostname = reverse_dns_lookup(ip_addr);
-  std::cout << "\nTrying to connect to " << host << " IP: " << ip_addr
-            << std::endl;
-  std::cout << "\nReverse Lookup domain: " << reverse_hostname << std::endl;
+  printf("\nTrying to connect to %s IP: %s\n", host, ip_addr);
+  printf("\nReverse Lookup domain: %s\n", reverse_hostname);
 
   // Create a raw socket
   sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
   if (sockfd < 0) {
-    std::cout << "\nSocket file descriptor not received!\n";
+    printf("\nSocket file descriptor not received!: %s\n", strerror(errno));
+    free(reverse_hostname);
+    free(ip_addr);
     return 0;
   } else {
-    std::cout << "\nSocket file descriptor " << sockfd << " received\n";
+    printf("\nSocket file descriptor %d received\n", sockfd);
   }
 
   // Send pings continuously
