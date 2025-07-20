@@ -169,7 +169,7 @@ typedef struct {
 } nl_payload_t;
 
 // little helper to parsing message using netlink macroses
-void parseRtattr(struct rtattr *tb[], int max, struct rtattr *rta, int len) {
+void parse_rtattr(struct rtattr *tb[], int max, struct rtattr *rta, int len) {
   memset(tb, 0, sizeof(struct rtattr *) * (max + 1));
 
   while (RTA_OK(rta, len)) { // while not end of the message
@@ -186,7 +186,7 @@ int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr) {
   nl_payload_t nl_data;
   struct iovec iov;
 
-  log_info("nw_handler_task started");
+  log_info("monic netlink started");
 
   iov.iov_base = nl_data.buf;        // set message buffer as io
   iov.iov_len = sizeof(nl_data.buf); // set size
@@ -264,9 +264,9 @@ int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr) {
 
         ifi = (struct ifinfomsg *)NLMSG_DATA(
             h); // get information about changed network interface
-        parseRtattr(tb, IFLA_MAX, IFLA_RTA(ifi),
-                    h->nlmsg_len); // get attributes
-        if (tb[IFLA_IFNAME]) {     // validation
+        parse_rtattr(tb, IFLA_MAX, IFLA_RTA(ifi),
+                     h->nlmsg_len); // get attributes
+        if (tb[IFLA_IFNAME]) {      // validation
           ifName =
               (char *)RTA_DATA(tb[IFLA_IFNAME]); // get network interface name
         }
@@ -290,7 +290,7 @@ int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr) {
 
         ifa = (struct ifaddrmsg *)NLMSG_DATA(
             h); // get data from the network interface
-        parseRtattr(tba, IFA_MAX, IFA_RTA(ifa), h->nlmsg_len);
+        parse_rtattr(tba, IFA_MAX, IFA_RTA(ifa), h->nlmsg_len);
 
         if (tba[IFA_LOCAL]) {
           inet_ntop(AF_INET, RTA_DATA(tba[IFA_LOCAL]), ifAddress,

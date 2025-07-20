@@ -6,10 +6,15 @@
 #include <mutex>
 #include <thread>
 
+#include "database.hpp"
 #include "log.h"
 #include "main.hpp"
 #include "netlink.h"
 #include "tcp.h"
+
+// Configurable test host and port for connectivity check
+constexpr const char *TEST_HOST = "google.com";
+constexpr int TEST_PORT = 80;
 
 std::mutex mtx;
 std::atomic<bool> g_shutdown_requested(false);
@@ -28,7 +33,7 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
 
     {
       // TODO: check the internet connection here
-      int err = monic_tcp_host(const_cast<char *>("localhost"), 8080);
+      int err = monic_tcp_host(const_cast<char *>(TEST_HOST), TEST_PORT);
       std::cout << "host result: " << err << std::endl;
       err = monic_tcp_host(const_cast<char *>("127.0.0.1"), 8080);
       std::cout << "ip result: " << err << std::endl;
@@ -46,6 +51,8 @@ int main() {
   std::signal(SIGKILL, monic_signal_handler);
 
   log_info("program started\n");
+
+  monic_storage_t storage = monic_database_setup();
 
   std::shared_ptr<monic::state_t> shared_state_ptr =
       std::make_shared<monic::state_t>();
