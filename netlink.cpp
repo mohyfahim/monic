@@ -11,155 +11,10 @@
 #include <unistd.h>
 
 #include "log.h"
+#include "netlink.h"
 
 #define MONIC_WAN_INTERFACE "wwan0"
 #define MONIC_WAN_PORT "/dev/cdc-wdm0"
-
-// static char *current_ip_address = NULL;
-
-// int setup_netlink_socket() {
-//   int sock_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-//   if (sock_fd < 0) {
-//     log_message(LOG_ERR, "Failed to create Netlink socket: %s",
-//                 strerror(errno));
-//     return -1;
-//   }
-
-//   struct sockaddr_nl sa;
-//   memset(&sa, 0, sizeof(sa));
-//   sa.nl_family = AF_NETLINK;
-//   // Listen for link state changes (RTMGRP_LINK) and IP address changes
-//   // (RTMGRP_IPV4_IFADDR, RTMGRP_IPV6_IFADDR)
-//   sa.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV6_IFADDR;
-
-//   if (bind(sock_fd, (struct sockaddr *)&sa, sizeof(sa)) < 0) {
-//     log_message(LOG_ERR, "Failed to bind Netlink socket: %s",
-//     strerror(errno)); close(sock_fd); return -1;
-//   }
-
-//   log_message(
-//       LOG_INFO,
-//       "Netlink socket successfully set up for monitoring network events.");
-//   return sock_fd;
-// }
-
-// // --- Handle Netlink Events ---
-// // Reads and parses Netlink messages to detect interface and IP changes.
-// void handle_netlink_event(int sock_fd) {
-//   char buffer[4096]; // Buffer for Netlink messages
-//   struct iovec iov = {buffer, sizeof(buffer)};
-//   struct sockaddr_nl sa;
-//   struct msghdr msg = {(void *)&sa, sizeof(sa), &iov, 1, NULL, 0, 0};
-
-//   ssize_t len = recvmsg(sock_fd, &msg, 0);
-//   if (len < 0) {
-//     if (errno == EINTR)
-//       return; // Interrupted by signal, just return
-//     log_message(LOG_ERR, "Netlink recvmsg error: %s", strerror(errno));
-//     return;
-//   }
-
-//   struct nlmsghdr *nh;
-//   // Iterate through Netlink messages in the buffer
-//   for (nh = (struct nlmsghdr *)buffer; NLMSG_OK(nh, len);
-//        nh = NLMSG_NEXT(nh, len)) {
-//     if (nh->nlmsg_type == NLMSG_DONE)
-//       break; // End of messages
-//     if (nh->nlmsg_type == NLMSG_ERROR) {
-//       log_message(LOG_ERR, "Netlink message error received.");
-//       continue;
-//     }
-
-//     // Handle link state changes (interface up/down)
-//     if (nh->nlmsg_type == RTM_NEWLINK || nh->nlmsg_type == RTM_DELLINK) {
-//       struct ifinfomsg *ifinfo = (struct ifinfomsg *)NLMSG_DATA(nh);
-//       char ifname[IF_NAMESIZE];
-//       if_indextoname(ifinfo->ifi_index,
-//                      ifname); // Get interface name from index
-
-//       // Only process events for our target WWAN interface
-//       if (strcmp(ifname, MONIC_WAN_INTERFACE) == 0) {
-//         if (nh->nlmsg_type == RTM_NEWLINK) {
-//           if (ifinfo->ifi_flags & IFF_UP) {
-//             log_message(LOG_INFO,
-//                         "Netlink Event: Network interface %s is now UP.",
-//                         ifname);
-//           } else {
-//             log_message(LOG_INFO,
-//                         "Netlink Event: Network interface %s is now DOWN.",
-//                         ifname);
-//             g_free(current_ip_address); // Clear stored IP on link down
-//             current_ip_address = NULL;
-//           }
-//         } else { // RTM_DELLINK
-//           log_message(LOG_INFO,
-//                       "Netlink Event: Network interface %s is DELETED.",
-//                       ifname);
-//           g_free(current_ip_address);
-//           current_ip_address = NULL;
-//         }
-//       }
-//     }
-//     // Handle IP address changes (new IP assigned, IP removed)
-//     else if (nh->nlmsg_type == RTM_NEWADDR || nh->nlmsg_type == RTM_DELADDR)
-//     {
-//       struct ifaddrmsg *ifaddr = (struct ifaddrmsg *)NLMSG_DATA(nh);
-//       char ifname[IF_NAMESIZE];
-//       if_indextoname(ifaddr->ifa_index, ifname);
-
-//       // Only process events for our target WWAN interface
-//       if (strcmp(ifname, MONIC_WAN_INTERFACE) == 0) {
-//         struct rtattr *rta;
-//         char ip_str[INET6_ADDRSTRLEN]; // Buffer for IP address string
-
-//         // Iterate through attributes to find the address
-//         for (rta = IFA_RTA(ifaddr); RTA_OK(rta, IFA_PAYLOAD(ifaddr));
-//              rta = RTA_NEXT(rta, IFA_PAYLOAD(ifaddr))) {
-//           if (rta->rta_type == IFA_ADDRESS) {
-//             // Convert binary IP to string
-//             if (ifaddr->ifa_family == AF_INET) {
-//               inet_ntop(AF_INET, RTA_DATA(rta), ip_str, sizeof(ip_str));
-//             } else if (ifaddr->ifa_family == AF_INET6) {
-//               inet_ntop(AF_INET6, RTA_DATA(rta), ip_str, sizeof(ip_str));
-//             } else {
-//               continue; // Skip unsupported address families
-//             }
-
-//             if (nh->nlmsg_type == RTM_NEWADDR) {
-//               // Check if IP has actually changed or is new
-//               if (current_ip_address == NULL ||
-//                   strcmp(current_ip_address, ip_str) != 0) {
-//                 log_message(LOG_INFO,
-//                             "Netlink Event: IP address for %s changed to %s",
-//                             ifname, ip_str);
-//                 g_free(current_ip_address);            // Free old IP string
-//                 current_ip_address = g_strdup(ip_str); // Store new IP
-//               }
-//             } else { // RTM_DELADDR
-//               log_message(LOG_INFO,
-//                           "Netlink Event: IP address %s removed from %s",
-//                           ip_str, ifname);
-//               if (current_ip_address &&
-//                   strcmp(current_ip_address, ip_str) == 0) {
-//                 g_free(current_ip_address);
-//                 current_ip_address = NULL;
-//               }
-//             }
-//           }
-//         }
-//       }
-//     }
-//   }
-// }
-
-// void monic_netlink_setup() {
-//   // --- Setup Netlink socket for network event monitoring ---
-//   int netlink_sock_fd = setup_netlink_socket();
-//   if (netlink_sock_fd < 0) {
-//     log_error("Failed to setup Netlink socket. Exiting monitor.");
-//     return EXIT_FAILURE;
-//   }
-// }
 
 typedef struct {
   int fd;
@@ -180,7 +35,9 @@ void parse_rtattr(struct rtattr *tb[], int max, struct rtattr *rta, int len) {
   }
 }
 
-int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr) {
+int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
+                       std::atomic<bool> *shutdown_requested_ptr,
+                       std::mutex *mtx_ptr) {
 
   // netlink
   nl_payload_t nl_data;
@@ -297,24 +154,45 @@ int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr) {
                     sizeof(ifAddress)); // get IP addr
         }
 
-        switch (h->nlmsg_type) { // what is actually happenned?
-        case RTM_DELADDR:
-          log_info("Interface %s: address was removed\n", ifName);
-          break;
-
-        case RTM_DELLINK:
-          log_info("Network interface %s was removed\n", ifName);
-          break;
-
-        case RTM_NEWLINK:
-          log_info("New network interface %s, state: %s %s\n", ifName, ifUpp,
-                   ifRunn);
-          break;
-
-        case RTM_NEWADDR:
-          log_info("Interface %s: new address was assigned: %s\n", ifName,
-                   ifAddress);
-          break;
+        {
+          std::lock_guard<std::mutex> lock(*mtx_ptr);
+          SampleModel sm{};
+          sm.interface = std::string(ifName);
+          std::string interface_status = std::string();
+          bool supported = true;
+          switch (h->nlmsg_type) { // what is actually happenned?
+          case RTM_DELADDR:
+            log_info("Interface %s: address was removed\n", ifName);
+            interface_status = "DELADDR";
+            break;
+          case RTM_DELLINK:
+            log_info("Network interface %s was removed\n", ifName);
+            interface_status = "DELLINK";
+            break;
+          case RTM_NEWLINK:
+            log_info("New network interface %s, state: %s %s\n", ifName, ifUpp,
+                     ifRunn);
+            interface_status =
+                "NEWLINK_" + std::string(ifName) + "_" + std::string(ifUpp);
+            break;
+          case RTM_NEWADDR:
+            log_info("Interface %s: new address was assigned: %s\n", ifName,
+                     ifAddress);
+            interface_status = "NEWADDR";
+            sm.ip = std::string(ifAddress);
+            break;
+          default:
+            log_warn("Unsupported Event");
+            supported = false;
+            break;
+          }
+          if (supported) {
+            sm.interface_status = interface_status;
+            sm.synced = false;
+            sm.created_at = monic::get_current_epoch();
+            sm.connection_status = state_ptr->connect;
+            state_ptr->storage->insert(sm);
+          }
         }
       }
 

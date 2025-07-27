@@ -1,5 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
+#include <mutex>
 
-int monic_netlink_task(std::atomic<bool> *shutdown_requested_ptr);
+#include "database.hpp"
+
+int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
+                       std::atomic<bool> *shutdown_requested_ptr,
+                       std::mutex *mtx_ptr);

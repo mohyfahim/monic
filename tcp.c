@@ -10,7 +10,7 @@
 
 #include "dns.h"
 
-int monic_tcp_ip(char *ip, int port) {
+int monic_tcp_ip(const char *ip, int port) {
   int sockfd, connfd;
   struct sockaddr_in servaddr;
 
@@ -42,7 +42,7 @@ int monic_tcp_ip(char *ip, int port) {
   return 0;
 }
 
-int monic_tcp_host(char *host, int port) {
+int monic_tcp_host(const char *host, int port) {
   int sockfd, connfd;
   struct sockaddr_in servaddr;
 

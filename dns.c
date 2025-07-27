@@ -17,7 +17,7 @@
 #define PORT_NO 0 // automatic port number
 
 // Perform a DNS lookup
-char *dns_lookup(char *addr_host, struct sockaddr_in *addr_con) {
+char *dns_lookup(const char *addr_host, struct sockaddr_in *addr_con) {
   printf("\nResolving DNS...\n");
   struct hostent *host_entity;
   char *ip = (char *)malloc(NI_MAXHOST * sizeof(char));
@@ -37,7 +37,7 @@ char *dns_lookup(char *addr_host, struct sockaddr_in *addr_con) {
 }
 
 // Resolve the reverse lookup of the hostname
-char *reverse_dns_lookup(char *ip_addr) {
+char *reverse_dns_lookup(const char *ip_addr) {
   struct sockaddr_in temp_addr;
   socklen_t len;
   char buf[NI_MAXHOST], *ret_buf;

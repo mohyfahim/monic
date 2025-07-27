@@ -30,5 +30,6 @@ target_link_libraries(monic_netlink PRIVATE monic_log)
 
 add_executable(monic main.cpp)
 target_include_directories(monic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(monic PUBLIC MONIC_LOG_LEVEL=0)
 target_link_libraries(monic PRIVATE sqlite3 monic_log monic_netlink monic_dns monic_tcp monic_ping)
 add_custom_command(TARGET monic POST_BUILD COMMAND strip -s monic)
