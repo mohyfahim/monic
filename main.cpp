@@ -7,11 +7,14 @@
 #include <thread>
 
 #include "database.hpp"
+#include "httplib.h"
+#include "json.hpp"
 #include "log.h"
 #include "main.hpp"
 #include "netlink.h"
 #include "tcp.h"
 
+using json = nlohmann::json;
 // Configurable test host and port for connectivity check
 constexpr const char *TEST_HOST = "google.com";
 constexpr int TEST_PORT = 80;
@@ -45,6 +48,16 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
       state_ptr->storage->insert(sm);
     }
     std::this_thread::sleep_for(std::chrono::seconds(15));
+  }
+}
+
+void monic_sync_task(std::shared_ptr<monic::state_t> state_ptr,
+                     std::atomic<bool> *shutdown_requested_ptr,
+                     std::mutex *mtx_ptr) {
+
+  while (!(*shutdown_requested_ptr).load()) {
+    { std::lock_guard<std::mutex> lock(*mtx_ptr); }
+    std::this_thread::sleep_for(std::chrono::seconds(60));
   }
 }
 
