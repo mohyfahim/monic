@@ -18,22 +18,20 @@ struct SampleModel {
   bool synced;
 };
 
-long long get_file_size(const std::string &filename) {
-  struct stat st;
-  if (stat(filename.c_str(), &st) == 0) {
-    return st.st_size;
-  }
-  return -1; // Indicate error
-}
-
 inline auto monic_database_setup() {
 
   std::string file_path = "/usr/share/monic/db.sqlite";
+  struct stat st;
 
-  long long size = get_file_size(file_path);
-  if (size > 4 * 1024 * 1024) {
-    log_info("delete database: %ld BYTES", size);
-    std::remove(file_path.c_str());
+  if (stat(file_path.c_str(), &st) == 0) {
+    constexpr off_t max_db_size = 4 * 1024 * 1024; // 4 MB
+    if (st.st_size > max_db_size) {
+      log_info("Database file exceeds %ld bytes (%ld bytes). Deleting: %s",
+               max_db_size, st.st_size, file_path.c_str());
+      if (std::remove(file_path.c_str()) != 0) {
+        log_error("Failed to delete database file: %s", file_path.c_str());
+      }
+    }
   }
 
   return sqlite_orm::make_storage(
