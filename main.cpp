@@ -7,14 +7,12 @@
 #include <thread>
 
 #include "database.hpp"
-#include "httplib.h"
-#include "json.hpp"
 #include "log.h"
 #include "main.hpp"
 #include "netlink.h"
 #include "tcp.h"
 
-using json = nlohmann::json;
+// using json = nlohmann::json;
 // Configurable test host and port for connectivity check
 constexpr const char *TEST_HOST = "google.com";
 constexpr int TEST_PORT = 80;

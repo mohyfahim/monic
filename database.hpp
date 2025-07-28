@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstdio>
 #include <optional>
 #include <string>
+#include <sys/stat.h>
 
+#include "log.h"
 #include "sqlite_orm.h"
 
 struct SampleModel {
@@ -15,10 +18,26 @@ struct SampleModel {
   bool synced;
 };
 
+long long get_file_size(const std::string &filename) {
+  struct stat st;
+  if (stat(filename.c_str(), &st) == 0) {
+    return st.st_size;
+  }
+  return -1; // Indicate error
+}
+
 inline auto monic_database_setup() {
 
+  std::string file_path = "/usr/share/monic/db.sqlite";
+
+  long long size = get_file_size(file_path);
+  if (size > 4 * 1024 * 1024) {
+    log_info("delete database: %ld BYTES", size);
+    std::remove(file_path.c_str());
+  }
+
   return sqlite_orm::make_storage(
-      "db.sqlite",
+      file_path,
       sqlite_orm::make_table(
           "SAMPLE",
           sqlite_orm::make_column("ID", &SampleModel::id,
