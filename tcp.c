@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "dns.h"
+#include "log.h"
 
 int monic_tcp_ip(const char *ip, int port) {
   int sockfd, connfd;
@@ -17,10 +18,10 @@ int monic_tcp_ip(const char *ip, int port) {
   // socket create and verification
   sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
   if (sockfd == -1) {
-    printf("socket creation failed: %s\n", strerror(errno));
+    log_error("socket creation failed: %s", strerror(errno));
     return -1;
   } else
-    printf("Socket successfully created..\n");
+    log_debug("Socket successfully created..");
 
   bzero(&servaddr, sizeof(servaddr));
 
@@ -31,10 +32,10 @@ int monic_tcp_ip(const char *ip, int port) {
 
   // connect the client socket to server socket
   if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
-    printf("connection with the server failed...\n");
+    log_debug("connection with the server failed...");
     return -1;
   } else
-    printf("connected to the server..\n");
+    log_debug("connected to the server..");
 
   // close the socket
   close(sockfd);
@@ -50,7 +51,7 @@ int monic_tcp_host(const char *host, int port) {
 
   char *ip_addr = dns_lookup(host, &servaddr);
   if (ip_addr == NULL) {
-    printf("\nDNS lookup failed! Could not resolve hostname!\n");
+    log_debug("DNS lookup failed! Could not resolve hostname!");
     return -1;
   }
   servaddr.sin_port = htons(port);
@@ -58,17 +59,17 @@ int monic_tcp_host(const char *host, int port) {
   // socket create and verification
   sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
   if (sockfd == -1) {
-    printf("socket creation failed: %s\n", strerror(errno));
+    log_error("socket creation failed: %s", strerror(errno));
     return -1;
   } else
-    printf("Socket successfully created..\n");
+    log_debug("Socket successfully created..");
 
   // connect the client socket to server socket
   if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) != 0) {
-    printf("connection with the server failed...\n");
+    log_debug("connection with the server failed...");
     return -1;
   } else
-    printf("connected to the server..\n");
+    log_debug("connected to the server..");
 
   // close the socket
   close(sockfd);

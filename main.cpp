@@ -21,7 +21,7 @@ std::mutex mtx;
 std::atomic<bool> g_shutdown_requested(false);
 
 void monic_signal_handler(int signum) {
-  if (signum == SIGINT || signum == SIGTERM) {
+  if (signum == SIGINT || signum == SIGTERM || signum == SIGKILL) {
     g_shutdown_requested.store(true);
   }
 }
@@ -33,9 +33,9 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
   while (!(*shutdown_requested_ptr).load()) {
     {
       int err1 = monic_tcp_host(const_cast<char *>(TEST_HOST), TEST_PORT);
-      std::cout << "host result: " << err1 << std::endl;
+      log_info("host result: %d", err1);
       int err2 = monic_tcp_ip(const_cast<char *>("216.239.38.120"), 80);
-      std::cout << "ip result: " << err2 << std::endl;
+      log_info("ip result: %d", err2);
       std::lock_guard<std::mutex> lock(*mtx_ptr);
       // TODO: analyze dns issues
       state_ptr->connect = (err1 == 0 || err2 == 0);
@@ -63,6 +63,8 @@ int main() {
 
   std::signal(SIGINT, monic_signal_handler);
   std::signal(SIGKILL, monic_signal_handler);
+  std::signal(SIGTERM, monic_signal_handler);
+
   log_set_level(MONIC_LOG_LEVEL);
   log_info("program started\n");
 

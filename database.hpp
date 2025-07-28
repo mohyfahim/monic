@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdio>
+#include <inttypes.h>
 #include <optional>
+#include <stdio.h>
 #include <string>
 #include <sys/stat.h>
 
@@ -21,14 +22,15 @@ struct SampleModel {
 inline auto monic_database_setup() {
 
   std::string file_path = "/usr/share/monic/db.sqlite";
-  struct stat st;
+  struct stat st = {};
 
   if (stat(file_path.c_str(), &st) == 0) {
     constexpr off_t max_db_size = 4 * 1024 * 1024; // 4 MB
     if (st.st_size > max_db_size) {
-      log_info("Database file exceeds %ld bytes (%ld bytes). Deleting: %s",
+      log_info("Database file exceeds %" PRIdMAX " bytes (%" PRIdMAX
+               " bytes). Deleting: %s",
                max_db_size, st.st_size, file_path.c_str());
-      if (std::remove(file_path.c_str()) != 0) {
+      if (remove(file_path.c_str()) != 0) {
         log_error("Failed to delete database file: %s", file_path.c_str());
       }
     }
