@@ -15,6 +15,7 @@ struct SampleModel {
   std::optional<std::string> interface;
   std::optional<std::string> ip;
   std::optional<std::string> interface_status;
+  std::optional<std::string> signal;
   long created_at;
   bool synced;
 };
@@ -49,6 +50,7 @@ inline auto monic_database_setup() {
           sqlite_orm::make_column("IP", &SampleModel::ip),
           sqlite_orm::make_column("INTERFACE_STATUS",
                                   &SampleModel::interface_status),
+          sqlite_orm::make_column("SIGNAL", &SampleModel::signal),
           sqlite_orm::make_column("CREATED_AT", &SampleModel::created_at)));
 }
 

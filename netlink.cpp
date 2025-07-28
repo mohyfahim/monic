@@ -2,6 +2,7 @@
 #include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <fcntl.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <net/if.h>
@@ -205,5 +206,69 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
   }
   close(nl_data.fd); // close socket
 
+  return 0;
+}
+
+int monic_kmsg_task(std::shared_ptr<monic::state_t> state_ptr,
+                    std::atomic<bool> *shutdown_requested_ptr,
+                    std::mutex *mtx_ptr) {
+  log_info("monic kmsg task started");
+
+  int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK);
+  if (fd < 0) {
+    log_error("Failed to open /dev/kmsg: %s", std::strerror(errno));
+    return -1;
+  }
+
+  char buf[1024];
+  while (!(*shutdown_requested_ptr).load()) {
+    ssize_t len = read(fd, buf, sizeof(buf) - 1);
+    if (len <= 0) {
+      usleep(200000); // 200ms sleep if no data
+      continue;
+    }
+
+    buf[len] = '\0';
+    std::string log_line(buf);
+
+    // Filter for rt3050-esw link events
+    if (log_line.find("rt3050-esw") != std::string::npos &&
+        (log_line.find("link up") != std::string::npos ||
+         log_line.find("link down") != std::string::npos)) {
+
+      // Extract port number and status
+      std::string interface = "lan"; // fallback/default
+      std::string status;
+      size_t port_pos = log_line.find("port ");
+      if (port_pos != std::string::npos) {
+        int port_num = log_line[port_pos + 5] - '0';  // crude but safe enough
+        interface = "lan" + std::to_string(port_num); // adjust as needed
+
+        if (log_line.find("link up") != std::string::npos) {
+          status = "LINK_UP";
+        } else {
+          status = "LINK_DOWN";
+        }
+
+        log_info("Detected switch event: port %d %s", port_num, status.c_str());
+
+        SampleModel sm{};
+        sm.interface = interface;
+        sm.interface_status = status;
+        sm.synced = false;
+        sm.created_at = monic::get_current_epoch();
+
+        {
+          std::lock_guard<std::mutex> lock(*mtx_ptr);
+          sm.connection_status = state_ptr->connect;
+          state_ptr->storage->insert(sm);
+        }
+      }
+    }
+
+    usleep(100000); // throttle loop
+  }
+
+  close(fd);
   return 0;
 }
