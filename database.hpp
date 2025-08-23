@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <inttypes.h>
 #include <optional>
 #include <stdio.h>
@@ -57,11 +58,6 @@ inline auto monic_database_setup() {
 using monic_storage_t = decltype(monic_database_setup());
 
 namespace monic {
-
-typedef struct {
-  bool connect;
-  monic_storage_t *storage;
-} state_t;
 
 inline long get_current_epoch() {
   auto duration = std::chrono::system_clock::now().time_since_epoch();

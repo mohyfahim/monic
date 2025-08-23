@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "log.h"
+#include "monic_shared.h"
 #include "netlink.h"
 
 #define MONIC_WAN_INTERFACE "wwan0"
@@ -37,8 +38,8 @@ void parse_rtattr(struct rtattr *tb[], int max, struct rtattr *rta, int len) {
 }
 
 int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
-                       std::atomic<bool> *shutdown_requested_ptr,
-                       std::mutex *mtx_ptr) {
+                       std::condition_variable *shutdown_requested_ptr,
+                       std::mutex *data_mtx_ptr, std::mutex *cv_mtx_ptr) {
 
   // netlink
   nl_payload_t nl_data;
@@ -74,8 +75,17 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
     return -1;
   }
 
-  while (!(*shutdown_requested_ptr).load()) {
+  while (true) {
 
+    {
+      std::unique_lock<std::mutex> lock(*cv_mtx_ptr);
+      std::cv_status cvs = shutdown_requested_ptr->wait_for(
+          lock, std::chrono::milliseconds(250));
+      if (cvs == std::cv_status::no_timeout) {
+        log_debug("recieved shutdown notify");
+        break;
+      }
+    }
     ssize_t status = recvmsg(nl_data.fd, &(nl_data.msg), MSG_DONTWAIT);
 
     //  check status
@@ -156,7 +166,7 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
         }
 
         {
-          std::lock_guard<std::mutex> lock(*mtx_ptr);
+          std::lock_guard<std::mutex> lock(*data_mtx_ptr);
           SampleModel sm{};
           sm.interface = std::string(ifName);
           std::string interface_status = std::string();
@@ -201,8 +211,6 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
           len); // align offsets by the message length, this is important
       h = (struct nlmsghdr *)((char *)h + NLMSG_ALIGN(len)); // get next message
     }
-
-    usleep(250000); // sleep for a while
   }
   close(nl_data.fd); // close socket
 
@@ -210,8 +218,8 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
 }
 
 int monic_kmsg_task(std::shared_ptr<monic::state_t> state_ptr,
-                    std::atomic<bool> *shutdown_requested_ptr,
-                    std::mutex *mtx_ptr) {
+                    std::condition_variable *shutdown_requested_ptr,
+                    std::mutex *data_mtx_ptr, std::mutex *cv_mtx_ptr) {
   log_info("monic kmsg task started");
 
   int fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK);
@@ -221,7 +229,7 @@ int monic_kmsg_task(std::shared_ptr<monic::state_t> state_ptr,
   }
 
   char buf[1024];
-  while (!(*shutdown_requested_ptr).load()) {
+  while (true) {
     ssize_t len = read(fd, buf, sizeof(buf) - 1);
     if (len <= 0) {
       usleep(200000); // 200ms sleep if no data
@@ -259,14 +267,21 @@ int monic_kmsg_task(std::shared_ptr<monic::state_t> state_ptr,
         sm.created_at = monic::get_current_epoch();
 
         {
-          std::lock_guard<std::mutex> lock(*mtx_ptr);
+          std::lock_guard<std::mutex> lock(*data_mtx_ptr);
           sm.connection_status = state_ptr->connect;
           state_ptr->storage->insert(sm);
         }
       }
     }
 
-    usleep(100000); // throttle loop
+    // usleep(100000); // throttle loop
+    std::unique_lock<std::mutex> lock(*cv_mtx_ptr);
+    std::cv_status cvs =
+        shutdown_requested_ptr->wait_for(lock, std::chrono::milliseconds(100));
+    if (cvs == std::cv_status::no_timeout) {
+      log_debug("recieved shutdown notify");
+      break;
+    }
   }
 
   close(fd);

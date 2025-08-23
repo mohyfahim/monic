@@ -10,9 +10,14 @@
 #include <thread>
 #include <unistd.h>
 
+#define CPPHTTPLIB_OPENSSL_SUPPORT
+
 #include "database.hpp"
+#include "httpclient.hpp"
+#include "httplib.h"
 #include "log.h"
 #include "main.hpp"
+#include "monic_shared.h"
 #include "netlink.h"
 #include "tcp.h"
 
@@ -22,11 +27,15 @@ constexpr const char *TEST_HOST = "google.com";
 constexpr int TEST_PORT = 80;
 
 std::mutex mtx;
-std::atomic<bool> g_shutdown_requested(false);
+std::mutex cv_mtx;
+// std::atomic<bool> g_shutdown_requested(false);
+std::condition_variable g_shutdown_requested;
 
 void monic_signal_handler(int signum) {
   if (signum == SIGINT || signum == SIGTERM || signum == SIGKILL) {
-    g_shutdown_requested.store(true);
+    // g_shutdown_requested.store(true);
+    log_info("received abort signal");
+    g_shutdown_requested.notify_all();
   }
 }
 
@@ -131,11 +140,12 @@ std::string executeCommand(const std::string &command, int timeout_ms) {
   }
 }
 
-void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
-                                   std::atomic<bool> *shutdown_requested_ptr,
-                                   std::mutex *mtx_ptr) {
+void monic_connectivity_check_task(
+    std::shared_ptr<monic::state_t> state_ptr,
+    std::condition_variable *shutdown_requested_ptr, std::mutex *data_mtx_ptr,
+    std::mutex *cv_mtx_ptr) {
 
-  while (!(*shutdown_requested_ptr).load()) {
+  while (true) {
     {
       int err1 = monic_tcp_host(const_cast<char *>(TEST_HOST), TEST_PORT);
       log_info("host result: %d", err1);
@@ -146,7 +156,7 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
           "uqmi -d /dev/cdc-wdm0 -s -t 5000 --get-signal-info", 5000);
       log_info("output command: %s", ls_output.c_str());
 
-      std::lock_guard<std::mutex> lock(*mtx_ptr);
+      std::lock_guard<std::mutex> lock(*data_mtx_ptr);
       // TODO: analyze dns issues
       state_ptr->connect = (err1 == 0 || err2 == 0);
       SampleModel sm{};
@@ -156,17 +166,14 @@ void monic_connectivity_check_task(std::shared_ptr<monic::state_t> state_ptr,
       sm.signal = ls_output;
       state_ptr->storage->insert(sm);
     }
-    std::this_thread::sleep_for(std::chrono::seconds(15));
-  }
-}
-
-void monic_sync_task(std::shared_ptr<monic::state_t> state_ptr,
-                     std::atomic<bool> *shutdown_requested_ptr,
-                     std::mutex *mtx_ptr) {
-
-  while (!(*shutdown_requested_ptr).load()) {
-    { std::lock_guard<std::mutex> lock(*mtx_ptr); }
-    std::this_thread::sleep_for(std::chrono::seconds(60));
+    // std::this_thread::sleep_for(std::chrono::seconds(15));
+    std::unique_lock<std::mutex> lock(*cv_mtx_ptr);
+    std::cv_status cvs =
+        shutdown_requested_ptr->wait_for(lock, std::chrono::seconds(15));
+    if (cvs == std::cv_status::no_timeout) {
+      log_debug("recieved shutdown notify");
+      break;
+    }
   }
 }
 
@@ -187,13 +194,20 @@ int main() {
   shared_state_ptr->storage = &storage;
 
   std::thread task1(monic_connectivity_check_task, shared_state_ptr,
-                    &g_shutdown_requested, &mtx);
+                    &g_shutdown_requested, &mtx, &cv_mtx);
 
   std::thread task2(monic_netlink_task, shared_state_ptr, &g_shutdown_requested,
-                    &mtx);
+                    &mtx, &cv_mtx);
 
-  std::thread task3(monic_kmsg_task, shared_state_ptr, &g_shutdown_requested,
+  std::thread task3(monic_sync_task, shared_state_ptr, &g_shutdown_requested,
+                    &mtx, &cv_mtx);
+
+#ifdef OPENWRT
+  std::thread task4(monic_kmsg_task, shared_state_ptr, &g_shutdown_requested,
                     &mtx);
+  task4.join();
+#endif
+
   task1.join();
   task2.join();
   task3.join();

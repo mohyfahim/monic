@@ -6,6 +6,10 @@ set(CMAKE_BUILD_TYPE MinSizeRel)
 set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} -Os")
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 
+
+find_package(OpenSSL REQUIRED)
+
+
 add_library(sqlite3 STATIC sqlite3.c)
 target_include_directories(sqlite3 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -29,8 +33,8 @@ target_include_directories(monic_netlink PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(monic_netlink PRIVATE monic_log)
 
 add_executable(monic main.cpp)
-target_include_directories(monic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_definitions(monic PUBLIC MONIC_LOG_LEVEL=2
+target_include_directories(monic PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${OPENSSL_INCLUDE_DIR})
+target_compile_definitions(monic PUBLIC MONIC_LOG_LEVEL=0
     CPPHTTPLIB_OPENSSL_SUPPORT)
-target_link_libraries(monic PRIVATE sqlite3 monic_log monic_netlink monic_dns monic_tcp monic_ping)
+target_link_libraries(monic PRIVATE OpenSSL::SSL OpenSSL::Crypto sqlite3 monic_log monic_netlink monic_dns monic_tcp monic_ping)
 install(TARGETS monic DESTINATION /usr/bin)
