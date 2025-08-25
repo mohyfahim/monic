@@ -82,7 +82,7 @@ int monic_netlink_task(std::shared_ptr<monic::state_t> state_ptr,
       std::cv_status cvs = shutdown_requested_ptr->wait_for(
           lock, std::chrono::milliseconds(250));
       if (cvs == std::cv_status::no_timeout) {
-        log_debug("recieved shutdown notify");
+        log_debug("netlink: recieved shutdown notify");
         break;
       }
     }

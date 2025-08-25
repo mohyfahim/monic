@@ -10,15 +10,13 @@
 #include <thread>
 #include <unistd.h>
 
-#define CPPHTTPLIB_OPENSSL_SUPPORT
-
 #include "database.hpp"
-#include "httpclient.hpp"
 #include "httplib.h"
 #include "log.h"
 #include "main.hpp"
 #include "monic_shared.h"
 #include "netlink.h"
+#include "sync.hpp"
 #include "tcp.h"
 
 // using json = nlohmann::json;
@@ -32,11 +30,8 @@ std::mutex cv_mtx;
 std::condition_variable g_shutdown_requested;
 
 void monic_signal_handler(int signum) {
-  if (signum == SIGINT || signum == SIGTERM || signum == SIGKILL) {
-    // g_shutdown_requested.store(true);
-    log_info("received abort signal");
-    g_shutdown_requested.notify_all();
-  }
+  log_info("received abort signal");
+  g_shutdown_requested.notify_all();
 }
 
 std::string executeCommand(const std::string &command, int timeout_ms) {
@@ -151,11 +146,15 @@ void monic_connectivity_check_task(
       log_info("host result: %d", err1);
       int err2 = monic_tcp_ip(const_cast<char *>("216.239.38.120"), 80);
       log_info("ip result: %d", err2);
-
-      std::string ls_output = executeCommand(
+#ifdef OPENWRT
+      std::string uqmi_output = executeCommand(
           "uqmi -d /dev/cdc-wdm0 -s -t 5000 --get-signal-info", 5000);
-      log_info("output command: %s", ls_output.c_str());
-
+      log_info("output command: %s", uqmi_output.c_str());
+#else
+      std::string temp_output =
+          executeCommand("cat /sys/class/thermal/thermal_zone1/temp", 5000);
+      log_info("output command: %s", temp_output.c_str());
+#endif
       std::lock_guard<std::mutex> lock(*data_mtx_ptr);
       // TODO: analyze dns issues
       state_ptr->connect = (err1 == 0 || err2 == 0);
@@ -163,7 +162,11 @@ void monic_connectivity_check_task(
       sm.created_at = monic::get_current_epoch();
       sm.connection_status = state_ptr->connect;
       sm.synced = false;
-      sm.signal = ls_output;
+#ifdef OPENWRT
+      sm.signal = uqmi_output;
+#else
+      sm.temperature = std::stoi(temp_output) / 1000;
+#endif
       state_ptr->storage->insert(sm);
     }
     // std::this_thread::sleep_for(std::chrono::seconds(15));
