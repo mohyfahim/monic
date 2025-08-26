@@ -143,17 +143,17 @@ void monic_connectivity_check_task(
   while (true) {
     {
       int err1 = monic_tcp_host(const_cast<char *>(TEST_HOST), TEST_PORT);
-      log_info("host result: %d", err1);
+      log_debug("host result: %d", err1);
       int err2 = monic_tcp_ip(const_cast<char *>("216.239.38.120"), 80);
-      log_info("ip result: %d", err2);
+      log_debug("ip result: %d", err2);
 #ifdef OPENWRT
       std::string uqmi_output = executeCommand(
           "uqmi -d /dev/cdc-wdm0 -s -t 5000 --get-signal-info", 5000);
-      log_info("output command: %s", uqmi_output.c_str());
+      log_debug("output command: %s", uqmi_output.c_str());
 #else
       std::string temp_output =
           executeCommand("cat /sys/class/thermal/thermal_zone1/temp", 5000);
-      log_info("output command: %s", temp_output.c_str());
+      log_debug("output command: %s", temp_output.c_str());
 #endif
       std::lock_guard<std::mutex> lock(*data_mtx_ptr);
       // TODO: analyze dns issues
